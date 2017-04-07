@@ -71,8 +71,13 @@
       <Project>{8451ECDD-2EA4-4966-BB0A-7BBC40138E80}</Project>
       <Name>Wox.Plugin</Name>
     </ProjectReference>
+    <ProjectReference Include="..\Wox\Wox.csproj">
+      <Project>{DB90F671-D861-46BB-93A3-F1304F5BA1C5}</Project>
+      <Name>Wox</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <None Include="app.config" />
     <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

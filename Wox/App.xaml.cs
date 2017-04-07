@@ -1,8 +1,13 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Timers;
 using System.Windows;
+using Firebase.Database;
+using Firebase.Database.Streaming;
+using FireSharp.EventStreaming;
 using Wox.Core;
 using Wox.Core.Plugin;
 using Wox.Core.Resource;
@@ -12,6 +17,7 @@ using Wox.Infrastructure.Http;
 using Wox.Infrastructure.Image;
 using Wox.Infrastructure.Logger;
 using Wox.Infrastructure.UserSettings;
+using Wox.Plugin;
 using Wox.ViewModel;
 using Stopwatch = Wox.Infrastructure.Stopwatch;
 
@@ -25,6 +31,10 @@ namespace Wox
         private Settings _settings;
         private MainViewModel _mainVM;
         private SettingWindowViewModel _settingsVM;
+        private const string BasePath = "https://alexa-fd19b.firebaseio.com/";
+        private const string FirebaseSecret = "SS3jBGy29CD5CY0BXkg5GAzfOXSQNoHLKUgeN0vF";
+        private static FirebaseClient _client;
+        private static DateTime _appStartDateTime;
 
         [STAThread]
         public static void Main()
@@ -47,6 +57,19 @@ namespace Wox
             {
                 Log.Info("|App.OnStartup|Begin Wox startup ----------------------------------------------------");
                 RegisterDispatcherUnhandledException();
+
+
+               // IFirebaseClient _client = new FirebaseClient(config);
+
+                            var _client = new FirebaseClient(
+              BasePath,
+              new FirebaseOptions
+              {
+                  AuthTokenAsyncFactory = () => Task.FromResult(FirebaseSecret)
+              });
+
+                RegisterFirebaseCallback(_client);
+
 
                 ImageLoader.Initialize();
                 Alphabet.Initialize();
@@ -81,6 +104,64 @@ namespace Wox
                 _mainVM.MainWindowVisibility = _settings.HideOnStartup ? Visibility.Hidden : Visibility.Visible;
                 Log.Info("|App.OnStartup|End Wox startup ----------------------------------------------------  ");
             });
+        }
+
+        private static async Task RegisterFirebaseCallback(FirebaseClient _client)
+        {
+            // await _client.DeleteAsync("Commands/command1");
+            _appStartDateTime = DateTime.Now;
+            
+                var observable = _client
+      .Child("Commands")
+      .AsObservable<Command>()
+      .Subscribe(OnNext);
+
+          
+        }
+
+        private static void OnNext(FirebaseEvent<Command> firebaseEvent)
+        {
+            if (firebaseEvent.EventType == FirebaseEventType.InsertOrUpdate)
+            {
+                var command = firebaseEvent.Object;
+                if (command != null)
+                {
+                    ExecuteQuery(command);
+                }
+            }
+        }
+
+        public static void ExecuteQuery(Command command)
+        {
+            Query query = PluginManager.QueryInit(command.name);
+
+            if (query != null)
+            {
+                // handle the exclusiveness of plugin using action keyword
+                
+                var plugins = PluginManager.ValidPluginsForQuery(query);
+                if (plugins.Count > 0)
+                {
+                    plugins = plugins.Where(x => x.Metadata.Name == command.pluginname).ToList();
+                    var allresults = new List<Result>();
+                    Task.Run(() =>
+                    {
+                        Parallel.ForEach(plugins, plugin =>
+                        {
+                            var results = PluginManager.QueryForPlugin(plugin, query);
+
+                            allresults.AddRange(results);
+                        });
+                    }).Wait();
+                        
+                    if (allresults.Any())
+                    {
+                        var firstOrDefault = allresults.FirstOrDefault();
+                        firstOrDefault?.Action.BeginInvoke(null, null, null);
+                    }
+                    Console.Write(allresults.ToString());
+                }
+            }
         }
 
 
@@ -165,5 +246,12 @@ namespace Wox
         {
             Current.MainWindow.Visibility = Visibility.Visible;
         }
+    }
+
+    public class Command
+    {
+        public string name { get; set; }
+        public string device { get; set; }
+        public string pluginname { get; set; }
     }
 }
